@@ -256,6 +256,9 @@
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
+    <Compile Include="Luis\Entity.cs" />
+    <Compile Include="Luis\Intent.cs" />
+    <Compile Include="Luis\LuisJSON.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

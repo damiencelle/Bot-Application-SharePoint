@@ -2,15 +2,18 @@
 using AuthBot;
 using AuthBot.Dialogs;
 using AuthBot.Models;
+using Bot_Application2.Luis;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Connector;
 using Microsoft.Online.SharePoint.TenantAdministration;
 using Microsoft.SharePoint.Client;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using OfficeDevPnP.Core;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
@@ -81,28 +84,27 @@ namespace Bot_Application2.Dialogs
         {
             if (!String.IsNullOrEmpty(message.Text))
             {
-                switch (message.Text)
+                String treatedMessage = await CallLuis(message.Text);
+
+                switch (treatedMessage)
                 {
-                    case "I want to see the suggestions":
+                    case "Hello":
+                        await SayHelloToUser(context, ctx, message);
+                        break;
+                    case "Suggestions.Show":
                         await ShowSuggestions(context, ctx, message);
                         break;
-                    case "ShowSuggestions":
-                        await ShowSuggestions(context, ctx, message);
-                        break;
-                    case "ShowAllSiteCollections":
+                    case "SiteCollections.Show":
                         await ShowAllSiteCollections(context, ctx);
                         break;
-                    case "I want to change the logo":
+                    case "Logo.Change":
                         await ShowLogoChangePage(context, ctx, message);
                         break;
-                    case "ShowLogoChangePage":
-                        await ShowLogoChangePage(context, ctx, message);
-                        break;
-                    case "I want to create a subsite":
+                    case "Subsite.Create":
                         await CreateSubsite(context, ctx, message);
                         break;
-                    case "CreateASubsite":
-                        await CreateSubsite(context, ctx, message);
+                    case "Test":
+                        await Test(context, ctx, message);
                         break;
                     default:
                         await ShowSuggestions(context, ctx, message);
@@ -115,15 +117,73 @@ namespace Bot_Application2.Dialogs
                 {
                     JObject messageJsonObject = message.Value as JObject;
 
-                    String spSiteUrl = messageJsonObject.GetValue("SpSite").ToString();
-                    String newSubsiteName = messageJsonObject.GetValue("SubsiteName").ToString();
-                    String subsiteWebTemplate = messageJsonObject.GetValue("SpWebTemplate").ToString();
+                    JToken spSiteUrl;
+                    JToken newSubsiteName;
+                    JToken subsiteWebTemplate;
 
-                    if (!String.IsNullOrEmpty(spSiteUrl) && !String.IsNullOrEmpty(newSubsiteName) && !String.IsNullOrEmpty(subsiteWebTemplate))
+                    bool existSpSiteUrl = messageJsonObject.TryGetValue("SpSite", out spSiteUrl);
+                    bool existNewSubsiteName = messageJsonObject.TryGetValue("SubsiteName", out newSubsiteName);
+                    bool existSubsiteWebTemplate = messageJsonObject.TryGetValue("SpWebTemplate", out subsiteWebTemplate);
+
+                    if (existSpSiteUrl && existNewSubsiteName && existSubsiteWebTemplate)
                     {
-                        await CreateSubsiteOnSharePoint(context, ctx, message, spSiteUrl, newSubsiteName, subsiteWebTemplate);
+                        await CreateSubsiteOnSharePoint(context, ctx, message, spSiteUrl.ToString(), newSubsiteName.ToString(), subsiteWebTemplate.ToString());
                     }
                 }
+            }
+        }
+
+        private async Task SayHelloToUser(IDialogContext context, ClientContext ctx, Activity message)
+        {
+            Activity reply = message.CreateReply("Hi I'm an Office 365 Bot. What can I do for you ?");
+            reply.Type = ActivityTypes.Message;
+            reply.TextFormat = TextFormatTypes.Plain;
+
+            await context.PostAsync(reply);
+        }
+
+        private async Task<string> CallLuis(string text)
+        {
+            string treatedMessage = string.Empty;
+            LuisJSON data = new LuisJSON();
+
+            using (HttpClient client = new HttpClient())
+            {
+                string requestUri = "https://westus.api.cognitive.microsoft.com/luis/v2.0/apps/b609a2c5-3a83-4cc6-b72a-0052b6453821?subscription-key=8d70230b2ebc4fffb63fc58a3b2a4c4a&staging=true&verbose=true&timezoneOffset=0&q=";
+
+                string finalQuery = String.Concat(requestUri, HttpUtility.UrlEncode(text));
+
+                HttpResponseMessage msg = await client.GetAsync(finalQuery);
+
+                if (msg.IsSuccessStatusCode)
+                {
+                    var jsonDataResponse = await msg.Content.ReadAsStringAsync();
+                    data = JsonConvert.DeserializeObject<LuisJSON>(jsonDataResponse);
+
+                    if(data.TopScoringIntent.Score > 0.95)
+                    {
+                        // We consider that Luis result is correct
+                        treatedMessage = data.TopScoringIntent.intent;
+                    }
+                }
+            }
+
+            return treatedMessage;
+        }
+
+        private async Task Test(IDialogContext context, ClientContext ctx, Activity message)
+        {
+            Tenant tenant = new Tenant(ctx);
+            
+            ctx.Load(tenant);
+
+            ctx.ExecuteQuery();
+
+            IList<OfficeDevPnP.Core.Entities.SiteEntity> cols = tenant.GetOneDriveSiteCollections();
+
+            foreach (OfficeDevPnP.Core.Entities.SiteEntity col in cols)
+            {
+                Console.WriteLine(col.Title);
             }
         }
 
@@ -165,7 +225,7 @@ namespace Bot_Application2.Dialogs
 
         private async Task ShowSuggestions(IDialogContext context, ClientContext ctx, Activity message)
         {
-            var reply = message.CreateReply("What would you like me to do?");
+            var reply = message.CreateReply("These are actions I can do. What would you like me to do?");
             reply.Type = ActivityTypes.Message;
             reply.TextFormat = TextFormatTypes.Plain;
 
