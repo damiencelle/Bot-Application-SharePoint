@@ -2,7 +2,9 @@
 using AuthBot;
 using AuthBot.Dialogs;
 using AuthBot.Models;
+using Bot_Application2.Common;
 using Bot_Application2.Luis;
+using Bot_Application2.Resources;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Connector;
 using Microsoft.Online.SharePoint.TenantAdministration;
@@ -25,18 +27,34 @@ namespace Bot_Application2.Dialogs
     {
         #region ########## ATTRIBUTES / PROPERTIES ############################
 
+        /// <summary>
+        /// The authentication result
+        /// </summary>
         private AuthResult _authResult;
 
         #endregion ####### ATTRIBUTES / PROPERTIES ############################
 
         #region ########## GENERIC ############################################
 
+        /// <summary>
+        /// The start of the code that represents the conversational dialog.
+        /// </summary>
+        /// <param name="context">The dialog context.</param>
+        /// <returns>
+        /// A task that represents the dialog start.
+        /// </returns>
         public Task StartAsync(IDialogContext context)
         {
             context.Wait(MessageReceivedAsync);
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Messages the received asynchronous.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="result">The result.</param>
+        /// <returns></returns>
         private async Task MessageReceivedAsync(IDialogContext context, IAwaitable<object> result)
         {
             var message = await result as Activity;
@@ -68,11 +86,17 @@ namespace Bot_Application2.Dialogs
 
         #region ########## AUTHENTICATION #####################################
 
+        /// <summary>
+        /// Resumes the after authentication.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="result">The result.</param>
+        /// <returns></returns>
         private async Task ResumeAfterAuth(IDialogContext context, IAwaitable<string> result)
         {
             var message = await result;
             await context.PostAsync(message);
-            await context.PostAsync("What would you like me to do?");
+            await context.PostAsync(AppResources.WhatWouldYouLikeMeToDo);
             context.Wait(MessageReceivedAsync);
         }
 
@@ -80,6 +104,13 @@ namespace Bot_Application2.Dialogs
 
         #region ########## PROCESS MESSAGES ###################################
 
+        /// <summary>
+        /// Processes the message.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <returns></returns>
         private async Task ProcessMessage(IDialogContext context, ClientContext ctx, Activity message)
         {
             if (!String.IsNullOrEmpty(message.Text))
@@ -88,22 +119,22 @@ namespace Bot_Application2.Dialogs
 
                 switch (treatedMessage)
                 {
-                    case "Hello":
+                    case AppConstants.HELLO:
                         await SayHelloToUser(context, ctx, message);
                         break;
-                    case "Suggestions.Show":
+                    case AppConstants.SUGGESTIONS_SHOW:
                         await ShowSuggestions(context, ctx, message);
                         break;
-                    case "SiteCollections.Show":
+                    case AppConstants.SITE_COLLECTIONS_SHOW:
                         await ShowAllSiteCollections(context, ctx);
                         break;
-                    case "Logo.Change":
+                    case AppConstants.LOGO_CHANGE:
                         await ShowLogoChangePage(context, ctx, message);
                         break;
-                    case "Subsite.Create":
+                    case AppConstants.SUBSITE_CREATE:
                         await CreateSubsite(context, ctx, message);
                         break;
-                    case "Test":
+                    case AppConstants.TEST:
                         await Test(context, ctx, message);
                         break;
                     default:
@@ -121,9 +152,9 @@ namespace Bot_Application2.Dialogs
                     JToken newSubsiteName;
                     JToken subsiteWebTemplate;
 
-                    bool existSpSiteUrl = messageJsonObject.TryGetValue("SpSite", out spSiteUrl);
-                    bool existNewSubsiteName = messageJsonObject.TryGetValue("SubsiteName", out newSubsiteName);
-                    bool existSubsiteWebTemplate = messageJsonObject.TryGetValue("SpWebTemplate", out subsiteWebTemplate);
+                    bool existSpSiteUrl = messageJsonObject.TryGetValue(AppConstants.SP_SITE, out spSiteUrl);
+                    bool existNewSubsiteName = messageJsonObject.TryGetValue(AppConstants.SUBSITE_NAME, out newSubsiteName);
+                    bool existSubsiteWebTemplate = messageJsonObject.TryGetValue(AppConstants.SP_WEBTEMPATE, out subsiteWebTemplate);
 
                     if (existSpSiteUrl && existNewSubsiteName && existSubsiteWebTemplate)
                     {
@@ -133,15 +164,27 @@ namespace Bot_Application2.Dialogs
             }
         }
 
+        /// <summary>
+        /// Says the hello to user.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <returns></returns>
         private async Task SayHelloToUser(IDialogContext context, ClientContext ctx, Activity message)
         {
-            Activity reply = message.CreateReply("Hi I'm an Office 365 Bot. What can I do for you ?");
+            Activity reply = message.CreateReply(AppResources.HiImAnOffice365Bot);
             reply.Type = ActivityTypes.Message;
             reply.TextFormat = TextFormatTypes.Plain;
 
             await context.PostAsync(reply);
         }
 
+        /// <summary>
+        /// Calls the luis.
+        /// </summary>
+        /// <param name="text">The text.</param>
+        /// <returns></returns>
         private async Task<string> CallLuis(string text)
         {
             string treatedMessage = string.Empty;
@@ -149,7 +192,7 @@ namespace Bot_Application2.Dialogs
 
             using (HttpClient client = new HttpClient())
             {
-                string requestUri = "https://westus.api.cognitive.microsoft.com/luis/v2.0/apps/b609a2c5-3a83-4cc6-b72a-0052b6453821?subscription-key=8d70230b2ebc4fffb63fc58a3b2a4c4a&staging=true&verbose=true&timezoneOffset=0&q=";
+                string requestUri = ConfigurationManager.AppSettings["LuisServiceURI"];
 
                 string finalQuery = String.Concat(requestUri, HttpUtility.UrlEncode(text));
 
@@ -160,7 +203,7 @@ namespace Bot_Application2.Dialogs
                     var jsonDataResponse = await msg.Content.ReadAsStringAsync();
                     data = JsonConvert.DeserializeObject<LuisJSON>(jsonDataResponse);
 
-                    if(data.TopScoringIntent.Score > 0.95)
+                    if(data.TopScoringIntent.Score > AppConstants.LUIS_TOP_SCORING_INTENT)
                     {
                         // We consider that Luis result is correct
                         treatedMessage = data.TopScoringIntent.intent;
@@ -187,6 +230,16 @@ namespace Bot_Application2.Dialogs
             }
         }
 
+        /// <summary>
+        /// Creates the subsite on share point.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <param name="spSiteUrl">The sp site URL.</param>
+        /// <param name="newSubsiteName">New name of the subsite.</param>
+        /// <param name="webTemplate">The web template.</param>
+        /// <returns></returns>
         private async Task CreateSubsiteOnSharePoint(IDialogContext context, ClientContext ctx, Activity message, string spSiteUrl, string newSubsiteName, string webTemplate)
         {
             Tenant tenant = new Tenant(ctx);
@@ -206,7 +259,7 @@ namespace Bot_Application2.Dialogs
             ctx.ExecuteQuery();
 
             // You can access your new subsite by clicking on this link
-            Activity reply = message.CreateReply("Your subsite has been created.");
+            Activity reply = message.CreateReply(AppResources.YourSubsiteHasBeenCreated);
             reply.Type = ActivityTypes.Message;
             reply.TextFormat = TextFormatTypes.Plain;
 
@@ -214,7 +267,7 @@ namespace Bot_Application2.Dialogs
             reply.SuggestedActions.Actions = new List<CardAction>();
             CardAction newSiteLink = new CardAction()
             {
-                Title = "Go to new created subsite",
+                Title = AppResources.GoToNewCreatedSubsite,
                 Type = ActionTypes.OpenUrl,
                 Value = newWeb.Url
             };
@@ -223,9 +276,16 @@ namespace Bot_Application2.Dialogs
             await context.PostAsync(reply);
         }
 
+        /// <summary>
+        /// Shows the suggestions.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <returns></returns>
         private async Task ShowSuggestions(IDialogContext context, ClientContext ctx, Activity message)
         {
-            var reply = message.CreateReply("These are actions I can do. What would you like me to do?");
+            var reply = message.CreateReply(AppResources.TheseAreActionsICanDo);
             reply.Type = ActivityTypes.Message;
             reply.TextFormat = TextFormatTypes.Plain;
 
@@ -233,19 +293,26 @@ namespace Bot_Application2.Dialogs
             {
                 Actions = new List<CardAction>()
                 {
-                    new CardAction(){ Title = "Show All Site Collections", Type=ActionTypes.PostBack, Value="ShowAllSiteCollections" },
-                    new CardAction(){ Title = "Change Site Collection Logo", Type=ActionTypes.PostBack, Value="ShowLogoChangePage" },
-                    new CardAction(){ Title = "Create a subsite", Type=ActionTypes.PostBack, Value="CreateASubsite" },
-                    new CardAction(){ Title = "Do something else", Type=ActionTypes.PostBack, Value="ShowSuggestions" }
+                    new CardAction(){ Title = AppResources.ShowAllSiteCollections, Type=ActionTypes.PostBack, Value=AppConstants.SITE_COLLECTIONS_SHOW },
+                    new CardAction(){ Title = AppResources.ChangeSiteCollectionLogo, Type=ActionTypes.PostBack, Value=AppConstants.LOGO_CHANGE },
+                    new CardAction(){ Title = AppResources.CreateASubsite, Type=ActionTypes.PostBack, Value=AppConstants.SUBSITE_CREATE },
+                    new CardAction(){ Title = AppResources.DoSomethingElse, Type=ActionTypes.PostBack, Value=AppConstants.SUGGESTIONS_SHOW }
                 }
             };
 
             await context.PostAsync(reply);
         }
 
+        /// <summary>
+        /// Shows the logo change page.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <returns></returns>
         private async Task ShowLogoChangePage(IDialogContext context, ClientContext ctx, Activity message)
         {
-            Activity reply = message.CreateReply("On which SPSite do you want to change the logo ? The click on the following links redirects you to display settings page.");
+            Activity reply = message.CreateReply(AppResources.OnWhichSPSiteDoYouWantToChangeTheLogo);
             reply.Type = ActivityTypes.Message;
             reply.TextFormat = TextFormatTypes.Plain;
 
@@ -268,7 +335,7 @@ namespace Bot_Application2.Dialogs
                     {
                         Title = sp.Title,
                         Type = ActionTypes.OpenUrl,
-                        Value = String.Concat(sp.Url, "/_layouts/15/prjsetng.aspx")
+                        Value = String.Concat(sp.Url, AppConstants.PRJ_SETTINGS_URL)
                     };
                     reply.SuggestedActions.Actions.Add(spSiteCardAction);
                 }
@@ -276,21 +343,28 @@ namespace Bot_Application2.Dialogs
             await context.PostAsync(reply);
         }
 
+        /// <summary>
+        /// Creates the subsite.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <param name="message">The message.</param>
+        /// <returns></returns>
         private async Task CreateSubsite(IDialogContext context, ClientContext ctx, Activity message)
         {
             var connector = new ConnectorClient(new Uri(message.ServiceUrl));
-            Activity replyToConversation = message.CreateReply("Create Subsite");
+            Activity replyToConversation = message.CreateReply(AppResources.CreateSubsite);
             replyToConversation.Attachments = new List<Microsoft.Bot.Connector.Attachment>();
 
             AdaptiveCard card = new AdaptiveCard();
 
             // Specify speech for the card.
-            card.Speak = "<s>Please fill informations to create subsite.</s>";
+            card.Speak = AppResources.PleaseFillInformationToCreateSubsite;
 
             // Add text to the card.
             card.Body.Add(new TextBlock()
             {
-                Text = "Create new subsite",
+                Text = AppResources.CreateNewSubsite,
                 Size = TextSize.Large,
                 Weight = TextWeight.Bolder
             });
@@ -298,12 +372,12 @@ namespace Bot_Application2.Dialogs
             // Add text to the card.
             card.Body.Add(new TextBlock()
             {
-                Text = "Select SPSite"
+                Text = AppResources.SelectSPSite
             });
 
             ChoiceSet spsites = new ChoiceSet()
             {
-                Id = "SpSite",
+                Id = AppConstants.SP_SITE,
                 Style = ChoiceInputStyle.Compact,
             };
 
@@ -334,12 +408,12 @@ namespace Bot_Application2.Dialogs
             // Add text to the card.
             card.Body.Add(new TextBlock()
             {
-                Text = "New Subsite Name"
+                Text = AppResources.NewSubsiteName
             });
 
             card.Body.Add(new TextInput()
             {
-                Id = "SubsiteName",
+                Id = AppConstants.SUBSITE_NAME,
                 IsMultiline = false
             });
 
@@ -347,7 +421,7 @@ namespace Bot_Application2.Dialogs
             // Add text to the card.
             card.Body.Add(new TextBlock()
             {
-                Text = "Web template to apply"
+                Text = AppResources.WebTemplateToApply
             });
 
             ctx.Load(ctx.Web);
@@ -359,7 +433,7 @@ namespace Bot_Application2.Dialogs
 
             ChoiceSet spWebTemlate = new ChoiceSet()
             {
-                Id = "SpWebTemplate",
+                Id = AppConstants.SP_WEBTEMPATE,
                 Style = ChoiceInputStyle.Compact,
             };
 
@@ -382,7 +456,7 @@ namespace Bot_Application2.Dialogs
             // Add buttons to the card.
             card.Actions.Add(new SubmitAction()
             {
-                Title = "Save"
+                Title = AppResources.Save
             });
 
             // Create the attachment.
@@ -397,6 +471,12 @@ namespace Bot_Application2.Dialogs
             var reply = await connector.Conversations.SendToConversationAsync(replyToConversation);
         }
 
+        /// <summary>
+        /// Shows all site collections.
+        /// </summary>
+        /// <param name="context">The context.</param>
+        /// <param name="ctx">The CTX.</param>
+        /// <returns></returns>
         private async Task ShowAllSiteCollections(IDialogContext context, ClientContext ctx)
         {
             // List all the site collections for the tenant
@@ -409,7 +489,7 @@ namespace Bot_Application2.Dialogs
 
             foreach (SiteProperties sp in prop)
             {
-                string strSiteColName = "Site Collection: " + sp.Title + " => " + sp.Url;
+                string strSiteColName = AppResources.SiteCollection + sp.Title + " => " + sp.Url;
                 await context.PostAsync(strSiteColName);
             }
         }
